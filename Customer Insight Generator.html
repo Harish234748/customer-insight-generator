@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Customer Insight Generator</title>
+<style>
+:root{--bg:#faf9f6;--card:#fff;--ink:#1f2328;--mute:#6b7280;--line:#e5e2db;--acc:#3b5bdb;--pos:#2f9e44;--neg:#e03131;--neu:#9ca3af;
+box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#16181c;--card:#1e2126;--ink:#e8e8e8;--mute:#9aa0a6;--line:#2e3238;--acc:#7c93f5;--pos:#51cf66;--neg:#ff6b6b;--neu:#6b7280}}
+:root[data-theme="dark"]{--bg:#16181c;--card:#1e2126;--ink:#e8e8e8;--mute:#9aa0a6;--line:#2e3238;--acc:#7c93f5;--pos:#51cf66;--neg:#ff6b6b;--neu:#6b7280}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:860px;margin:0 auto;padding:20px 16px 48px}
+h1{font-size:24px;margin:0 0 4px}
+.sub{color:var(--mute);margin:0 0 18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;margin-bottom:14px}
+textarea{width:100%;min-height:150px;resize:vertical;border:1px solid var(--line);border-radius:8px;padding:10px;background:var(--bg);color:var(--ink);font:inherit}
+.row{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+button{border:1px solid var(--line);background:var(--card);color:var(--ink);padding:9px 14px;border-radius:8px;font:inherit;cursor:pointer}
+button.p{background:var(--acc);border-color:var(--acc);color:#fff}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px}
+.stat b{display:block;font-size:26px}
+.stat span{color:var(--mute);font-size:13px}
+.bar{display:flex;height:10px;border-radius:5px;overflow:hidden;margin:12px 0 0;background:var(--line)}
+.bar i{display:block}
+h2{font-size:16px;margin:0 0 10px}
+.th{padding:10px 0;border-top:1px solid var(--line)}
+.th:first-of-type{border-top:0}
+.th .h{display:flex;justify-content:space-between;gap:8px;font-weight:600}
+.pill{font-size:12px;padding:2px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mute);font-weight:400}
+.q{color:var(--mute);font-style:italic;margin:4px 0 0;font-size:14px}
+ul{margin:0;padding-left:20px}li{margin:6px 0}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{background:var(--bg);border:1px solid var(--line);border-radius:99px;padding:3px 10px;font-size:13px}
+.hide{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Customer Insight Generator</h1>
+<p class="sub">Paste reviews, survey answers or support tickets (one per line). Get themes, sentiment and suggested actions. Runs entirely in your browser.</p>
+
+<div class="card">
+<textarea id="in" placeholder="One piece of feedback per line..."></textarea>
+<div class="row">
+<button class="p" id="go">Generate insights</button>
+<button id="sample">Load sample data</button>
+<button id="clear">Clear</button>
+</div>
+</div>
+
+<div id="out" class="hide">
+<div class="card">
+<div class="stats" id="stats"></div>
+<div class="bar" id="bar"></div>
+</div>
+<div class="card"><h2>Key insights</h2><ul id="ins"></ul></div>
+<div class="card"><h2>Themes</h2><div id="themes"></div></div>
+<div class="card"><h2>Recommended actions</h2><ul id="act"></ul></div>
+<div class="card"><h2>Frequent terms</h2><div class="chips" id="terms"></div></div>
+<div class="row"><button id="copy">Copy summary</button></div>
+</div>
+</div>
+
+<script>
+const THEMES={
+"Pricing & billing":["price","pricing","expensive","cost","cheap","afford","subscription","fee","billing","refund","worth","charge"],
+"Customer support":["support","agent","service","response","reply","helpdesk","ticket","representative","contact"],
+"Product quality & reliability":["quality","broke","broken","bug","crash","glitch","reliable","defect","error","fail","stopped working"],
+"Ease of use":["easy","simple","intuitive","confusing","complicated","clunky","interface","ux","navigate","learn"],
+"Features":["feature","integration","missing","wish","option","customiz","export","dashboard","functionality"],
+"Speed & performance":["slow","fast","speed","lag","loading","performance","quick","wait"],
+"Delivery & shipping":["delivery","shipping","shipped","arrived","late","package","courier","delay"],
+"Onboarding & docs":["onboarding","setup","set up","tutorial","documentation","docs","guide","getting started","training"]
+};
+const POS="great good love loved excellent amazing awesome fantastic helpful easy intuitive fast quick reliable smooth perfect happy recommend best friendly responsive worth impressed simple nice wonderful solid".split(" ");
+const NEG="bad poor terrible awful slow broken broke bug crash confusing complicated clunky expensive late delay delayed frustrating frustrated disappointing disappointed worst useless missing unreliable rude ignored annoying hard difficult lag glitch error fail failed overpriced cancel problem issue issues waste".split(" ");
+const NEGATORS=["not","never","no","dont","don't","isnt","isn't","wasnt","wasn't","doesnt","doesn't","cant","can't","hardly"];
+const STOP=new Set("the a an and or but of to in on for with is are was were it its this that i we you my our your they them be been have has had at as by from so if just very really too can will would get got also than then there their about into out up not no do does did one more".split(" "));
+const ACTIONS={
+"Pricing & billing":"Review pricing tiers and communicate value; consider a clearer plan comparison or a cheaper entry tier.",
+"Customer support":"Set a response-time target, add a self-service help center, and review recent unresolved tickets.",
+"Product quality & reliability":"Triage the most reported bugs, add monitoring, and publish a fix timeline to affected customers.",
+"Ease of use":"Run usability tests on the flows people call confusing and simplify the top friction points.",
+"Features":"Cluster requested features into a roadmap and share what is planned, so customers feel heard.",
+"Speed & performance":"Profile slow screens and set performance budgets for the most used workflows.",
+"Delivery & shipping":"Audit carrier performance, set accurate delivery estimates and send proactive delay notices.",
+"Onboarding & docs":"Add a guided first-run checklist and short how-to content for the first week of use."
+};
+const SAMPLE=[
+"Love the dashboard, really intuitive and easy to use.",
+"Support took 4 days to reply and the agent was not helpful.",
+"Way too expensive for what you get. Considering cancelling.",
+"The app crashes every time I export a report. Very frustrating.",
+"Great price for the features, worth every penny.",
+"Setup was confusing and the documentation is missing key steps.",
+"Fast and reliable, no issues in six months.",
+"Customer service was friendly and solved my issue quickly.",
+"I wish there were more integrations. Export options are limited.",
+"Pages are slow to load during peak hours.",
+"Onboarding tutorial was excellent, got my team going in a day.",
+"Billing charged me twice and the refund took weeks."
+].join("\n");
+
+const $=id=>document.getElementById(id);
+const esc=s=>s.replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+let lastSummary="";
+
+function score(text){
+const t=text.toLowerCase().match(/[a-z']+/g)||[];let s=0;
+t.forEach((w,i)=>{
+let v=POS.includes(w)?1:NEG.includes(w)?-1:0;
+if(v&&(NEGATORS.includes(t[i-1])||NEGATORS.includes(t[i-2])))v=-v;
+s+=v;});
+return s;
+}
+
+function analyze(){
+const lines=$("in").value.split(/\n+/).map(s=>s.trim()).filter(s=>s.length>2);
+if(!lines.length){$("out").classList.add("hide");return;}
+const items=lines.map(text=>{const sc=score(text);return{text,sc,lab:sc>0?"pos":sc<0?"neg":"neu"}});
+const n=items.length,c={pos:0,neg:0,neu:0};items.forEach(i=>c[i.lab]++);
+const pct=k=>Math.round(c[k]/n*100);
+
+const th={};
+Object.keys(THEMES).forEach(k=>th[k]={pos:0,neg:0,neu:0,total:0,worst:null,best:null});
+items.forEach(it=>{
+const low=it.text.toLowerCase();
+Object.keys(THEMES).forEach(k=>{
+if(THEMES[k].some(w=>low.includes(w))){
+const o=th[k];o[it.lab]++;o.total++;
+if(!o.worst||it.sc<o.worst.sc)o.worst=it;
+if(!o.best||it.sc>o.best.sc)o.best=it;}});});
+const list=Object.entries(th).filter(([,v])=>v.total>0).sort((a,b)=>b[1].total-a[1].total);
+
+const freq={};
+items.forEach(it=>(it.text.toLowerCase().match(/[a-z]{4,}/g)||[]).forEach(w=>{if(!STOP.has(w))freq[w]=(freq[w]||0)+1}));
+const terms=Object.entries(freq).filter(([,v])=>v>1).sort((a,b)=>b[1]-a[1]).slice(0,14);
+
+$("stats").innerHTML=
+`<div class="stat"><b>${n}</b><span>responses</span></div>
+<div class="stat"><b style="color:var(--pos)">${pct("pos")}%</b><span>positive</span></div>
+<div class="stat"><b style="color:var(--neg)">${pct("neg")}%</b><span>negative</span></div>
+<div class="stat"><b>${list.length}</b><span>themes found</span></div>`;
+$("bar").innerHTML=`<i style="width:${c.pos/n*100}%;background:var(--pos)"></i><i style="width:${c.neu/n*100}%;background:var(--neu)"></i><i style="width:${c.neg/n*100}%;background:var(--neg)"></i>`;
+
+const ins=[];
+const mood=c.pos>c.neg*1.5?"mostly positive":c.neg>c.pos*1.5?"mostly negative":"mixed";
+ins.push(`Overall sentiment is <b>${mood}</b>: ${pct("pos")}% positive vs ${pct("neg")}% negative.`);
+const byNeg=[...list].sort((a,b)=>b[1].neg-a[1].neg)[0];
+if(byNeg&&byNeg[1].neg>0)ins.push(`Biggest pain point: <b>${byNeg[0]}</b> (${byNeg[1].neg} negative mention${byNeg[1].neg>1?"s":""}).`);
+const byPos=[...list].sort((a,b)=>b[1].pos-a[1].pos)[0];
+if(byPos&&byPos[1].pos>0)ins.push(`Biggest strength: <b>${byPos[0]}</b> (${byPos[1].pos} positive mention${byPos[1].pos>1?"s":""}).`);
+const pol=list.find(([,v])=>v.pos>=1&&v.neg>=1&&Math.min(v.pos,v.neg)/Math.max(v.pos,v.neg)>=0.5);
+if(pol)ins.push(`<b>${pol[0]}</b> is polarizing: customers are split, so look for what separates happy from unhappy users.`);
+if(list.length&&list[0][1].total/n>=0.3)ins.push(`<b>${list[0][0]}</b> dominates the conversation, appearing in ${Math.round(list[0][1].total/n*100)}% of responses.`);
+const un=items.filter(i=>!Object.values(THEMES).some(ws=>ws.some(w=>i.text.toLowerCase().includes(w)))).length;
+if(un>n*0.3)ins.push(`${un} responses did not match any known theme; review them manually for emerging topics.`);
+$("ins").innerHTML=ins.map(i=>`<li>${i}</li>`).join("");
+
+$("themes").innerHTML=list.map(([k,v])=>{
+const q=(v.neg>=v.pos?v.worst:v.best).text;
+return `<div class="th"><div class="h"><span>${k}</span><span class="pill">${v.total} mentions · ${v.pos} pos · ${v.neg} neg</span></div><p class="q">“${esc(q)}”</p></div>`}).join("")||"<p class='q'>No themes detected.</p>";
+
+const acts=[...list].filter(([,v])=>v.neg>0).sort((a,b)=>b[1].neg-a[1].neg).slice(0,4).map(([k,v])=>`<b>${k}</b>: ${ACTIONS[k]}`);
+$("act").innerHTML=(acts.length?acts:["No clear negative themes. Keep monitoring and double down on what customers praise."]).map(a=>`<li>${a}</li>`).join("");
+$("terms").innerHTML=terms.map(([w,v])=>`<span class="chip">${esc(w)} · ${v}</span>`).join("")||"<span class='q'>Not enough repeated terms.</span>";
+
+const strip=h=>h.replace(/<[^>]+>/g,"");
+lastSummary=`Customer insight summary (${n} responses)\n\nKey insights:\n`+ins.map(i=>"- "+strip(i)).join("\n")+"\n\nRecommended actions:\n"+acts.map(a=>"- "+strip(a)).join("\n");
+$("out").classList.remove("hide");
+$("out").scrollIntoView({behavior:"smooth"});
+}
+
+$("go").onclick=analyze;
+$("sample").onclick=()=>{$("in").value=SAMPLE;analyze()};
+$("clear").onclick=()=>{$("in").value="";$("out").classList.add("hide")};
+$("copy").onclick=async()=>{
+try{await navigator.clipboard.writeText(lastSummary);$("copy").textContent="Copied!"}
+catch(e){$("copy").textContent="Copy not available"}
+setTimeout(()=>$("copy").textContent="Copy summary",1500);
+};
+</script>
+</body>
+</html>
